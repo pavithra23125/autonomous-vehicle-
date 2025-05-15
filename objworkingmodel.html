@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>KPPA Autonomous Vehicle - Object Detection</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(to bottom right, #f0f8ff, #e6f7ff);
+    }
+
+    header {
+      background-color: #007acc;
+      color: white;
+      padding: 20px;
+      text-align: center;
+    }
+
+    #mainContent {
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .description {
+      max-width: 800px;
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+      margin-bottom: 20px;
+      text-align: justify;
+    }
+
+    .description img {
+      width: 100%;
+      border-radius: 12px;
+      margin-bottom: 15px;
+    }
+
+    #controls {
+      margin-bottom: 20px;
+    }
+
+    button {
+      margin: 0 10px;
+      padding: 10px 20px;
+      font-size: 16px;
+      background-color: #007acc;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background-color: #005a99;
+    }
+
+    #videoContainer {
+      position: relative;
+      width: 640px;
+      height: 480px;
+      margin-bottom: 20px;
+    }
+
+    video, canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 640px;
+      height: 480px;
+      border-radius: 10px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    }
+
+    #consoleOutput {
+      width: 90%;
+      max-width: 800px;
+      background-color: #222;
+      color: #0f0;
+      padding: 10px;
+      font-family: monospace;
+      font-size: 14px;
+      height: 150px;
+      overflow-y: auto;
+      border-radius: 10px;
+      margin: 20px auto;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>KPPA Autonomous Vehicle</h1>
+    <h2>Object Detection Dashboard</h2>
+  </header>
+
+  <div id="mainContent">
+    <div class="description">
+      <img src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTIzMtDH63i_tXTcNwccSDPh0hPrm_jbwQGTA&s"
+           alt="Autonomous vehicle example" />
+      <p>
+        The KPPA Autonomous Vehicle project integrates real-time object detection technology using TensorFlow.js and the COCO-SSD model. This system is designed to recognize everyday objects such as pedestrians, traffic lights, vehicles, and road signs. The goal is to enhance vehicular autonomy by providing live feedback through a web interface.
+      </p>
+      <p>
+        Users can upload an image or activate their webcam to see detected objects in action. With modern AI models and a user-friendly interface, this tool serves as a simulation environment to understand how object recognition contributes to safer and smarter vehicles in the real world.
+      </p>
+    </div>
+
+    <div id="controls">
+      <button onclick="uploadImage()">Upload Image</button>
+      <button onclick="startWebcam()">Start Webcam</button>
+      <button id="stopWebcamBtn" onclick="stopWebcam()" disabled>Stop Webcam</button>
+    </div>
+
+    <div id="videoContainer">
+      <video id="video" autoplay></video>
+      <canvas id="canvas"></canvas>
+    </div>
+  </div>
+
+  <div id="consoleOutput">Console Output:<br></div>
+
+  <script>
+    const videoElement = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const consoleOutput = document.getElementById('consoleOutput');
+    let mediaStream = null;
+    let model = null;
+
+    function logToConsole(message) {
+      consoleOutput.innerHTML += message + "<br>";
+      consoleOutput.scrollTop = consoleOutput.scrollHeight;
+    }
+
+    async function loadModel() {
+      logToConsole("Loading model...");
+      model = await cocoSsd.load();
+      logToConsole("✅ Model loaded successfully.");
+    }
+    loadModel();
+
+    function startWebcam() {
+      navigator.mediaDevices.getUserMedia({ video: true })
+        .then(stream => {
+          mediaStream = stream;
+          videoElement.srcObject = stream;
+          document.getElementById('stopWebcamBtn').disabled = false;
+
+          videoElement.onloadedmetadata = () => {
+            canvas.width = videoElement.videoWidth;
+            canvas.height = videoElement.videoHeight;
+            detectFrame();
+            logToConsole("🎥 Webcam started.");
+          };
+        })
+        .catch(err => {
+          console.error(err);
+          alert("Error accessing webcam.");
+          logToConsole("❌ Webcam access denied.");
+        });
+    }
+
+    function stopWebcam() {
+      if (mediaStream) {
+        mediaStream.getTracks().forEach(track => track.stop());
+        videoElement.srcObject = null;
+        document.getElementById('stopWebcamBtn').disabled = true;
+        logToConsole("🛑 Webcam stopped.");
+      }
+    }
+
+    function detectFrame() {
+      if (!model || !videoElement.srcObject) return;
+      model.detect(videoElement).then(predictions => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        let detected = false;
+
+        predictions.forEach(pred => {
+          if (pred.score > 0.5) {
+            detected = true;
+            ctx.beginPath();
+            ctx.rect(...pred.bbox);
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = 'red';
+            ctx.fillStyle = 'red';
+            ctx.stroke();
+            ctx.fillText(`${pred.class} (${Math.round(pred.score * 100)}%)`, pred.bbox[0], pred.bbox[1] > 10 ? pred.bbox[1] - 5 : 10);
+          }
+        });
+
+        if (detected) {
+          logToConsole("🚫 Stop the car - Object detected.");
+        } else {
+          logToConsole("✅ Safe to drive - No objects detected.");
+        }
+
+        requestAnimationFrame(detectFrame);
+      });
+    }
+
+    function uploadImage() {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      input.onchange = e => {
+        const reader = new FileReader();
+        reader.onload = event => {
+          const img = new Image();
+          img.onload = () => {
+            img.style.display = "none";
+            document.body.appendChild(img);
+
+            canvas.width = img.width;
+            canvas.height = img.height;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0);
+
+            model.detect(img).then(predictions => {
+              let detected = false;
+
+              predictions.forEach(pred => {
+                if (pred.score > 0.5) {
+                  detected = true;
+                  ctx.beginPath();
+                  ctx.rect(...pred.bbox);
+                  ctx.lineWidth = 3;
+                  ctx.strokeStyle = 'red';
+                  ctx.fillStyle = 'red';
+                  ctx.stroke();
+                  ctx.fillText(`${pred.class} (${Math.round(pred.score * 100)}%)`, pred.bbox[0], pred.bbox[1] > 10 ? pred.bbox[1] - 5 : 10);
+                }
+              });
+
+              if (detected) {
+                logToConsole("🚫 Stop the car - Object detected.");
+              } else {
+                logToConsole("✅ Safe to drive - No objects detected.");
+              }
+
+              document.body.removeChild(img);
+            }).catch(err => {
+              logToConsole("⚠️ Detection error: " + err.message);
+              document.body.removeChild(img);
+            });
+          };
+          img.src = event.target.result;
+        };
+        reader.readAsDataURL(e.target.files[0]);
+      };
+      input.click();
+    }
+  </script>
+</body>
+</html>
